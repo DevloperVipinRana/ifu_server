@@ -41,9 +41,10 @@ const authMiddleware = (req, res, next) => {
 
 // Nodemailer transporter
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com', // or your SMTP host
-  port: 465, // 587 for TLS
-  secure: true, // true for 465, false for 587
+  // host: 'smtp.gmail.com', // or your SMTP host
+  // port: 465, // 587 for TLS
+  // secure: true, // true for 465, false for 587
+  service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
