@@ -4,12 +4,19 @@ const Post = require("../models/Post");
 const { authMiddleware } = require("./auth"); // use your middleware
 const multer = require("multer");
 const path = require("path");
+const fs = require("fs");
 const User = require("../models/User");
 
 
+// Ensure uploads/posts directory exists and use absolute path
+const postsDir = path.join(__dirname, "..", "uploads", "posts");
+if (!fs.existsSync(postsDir)) {
+  try { fs.mkdirSync(postsDir, { recursive: true }); } catch (e) { console.error("Failed to create posts upload dir:", e); }
+}
+
 // storage for posts
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/posts/"),
+  destination: (req, file, cb) => cb(null, postsDir),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
     cb(null, req.user.id + "_" + Date.now() + ext);

@@ -3,12 +3,18 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const multer = require('multer');
+const fs = require('fs');
 const ICompleted = require('../models/ICompleted');
 const { authMiddleware } = require('./auth');
 
-// --- Multer setup ---
+// --- Multer setup --- ensure uploads/icompleted exists and use absolute path
+const icompletedDir = path.join(__dirname, '..', 'uploads', 'icompleted');
+if (!fs.existsSync(icompletedDir)) {
+  try { fs.mkdirSync(icompletedDir, { recursive: true }); } catch (e) { console.error('Failed to create icompleted upload dir:', e); }
+}
+
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/icompleted'),
+  destination: (req, file, cb) => cb(null, icompletedDir),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
     cb(null, `${req.user.id}_${Date.now()}${ext}`);
