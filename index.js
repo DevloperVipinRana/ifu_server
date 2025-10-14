@@ -9,8 +9,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve uploads folder (for profile images, etc.)
-app.use('/uploads', express.static('uploads'));
+// Serve uploads folder (for profile images, etc.) using absolute path
+const path = require('path');
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Connect MongoDB FIRST, then start server
 const startServer = async () => {

@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
 const Otp = require('../models/Otp');
 const sgMail = require('@sendgrid/mail'); // ✅ Changed from nodemailer
@@ -14,10 +15,15 @@ const crypto = require('crypto');
 // ✅ Initialize SendGrid
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
-// 1️⃣ Configure storage
+// 1️⃣ Ensure uploads directory exists and configure storage
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  try { fs.mkdirSync(uploadsDir, { recursive: true }); } catch (e) { console.error('Failed to create uploads dir:', e); }
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // Folder where images will be stored
+    cb(null, uploadsDir); // Absolute path for reliability in cloud hosts
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
@@ -185,6 +191,14 @@ router.put('/profile', authMiddleware, upload.single('profileImage'), async (req
       personality, movieGenre, likesToTravel, profileCompleted
     } = req.body;
 
+    // Normalize fields coming from multipart/form-data
+    const toArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+    const normalizedInterests = toArray(interests);
+    const normalizedGoals = toArray(goals);
+    const normalizedLikesToTravel = typeof likesToTravel === 'string'
+      ? likesToTravel.toLowerCase() === 'true'
+      : Boolean(likesToTravel);
+
     // Handle profile image
     let profileImageUrl;
     if (req.file) {
@@ -194,11 +208,15 @@ router.put('/profile', authMiddleware, upload.single('profileImage'), async (req
     const updatedUser = await User.findByIdAndUpdate(
       req.user.id,
       {
-        bio, interests, goals, occupation, ageGroup, address,
+        bio,
+        interests: normalizedInterests,
+        goals: normalizedGoals,
+        occupation, ageGroup, address,
         hobbies, musicTaste, phoneUsage, favMusician, favSports,
         indoorTime, outdoorTime, favWork, favPlace,
-        personality, movieGenre, likesToTravel,
-        profileCompleted: profileCompleted ?? true,
+        personality, movieGenre,
+        likesToTravel: normalizedLikesToTravel,
+        profileCompleted: typeof profileCompleted === 'undefined' ? true : profileCompleted,
         ...(profileImageUrl && { profileImage: profileImageUrl })
       },
       { new: true }
