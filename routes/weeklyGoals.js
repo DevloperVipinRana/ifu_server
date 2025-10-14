@@ -55,24 +55,7 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Update goal text or progress
-router.patch('/:id', authMiddleware, async (req, res) => {
-  try {
-    const { text, progress } = req.body;
-
-    const weeklyGoal = await WeeklyGoal.findOne({ _id: req.params.id, user: req.user.id });
-    if (!weeklyGoal) return res.status(404).json({ error: 'WeeklyGoal not found' });
-
-    if (text !== undefined) weeklyGoal.text = text;
-    if (progress !== undefined) weeklyGoal.progress = progress;
-    weeklyGoal.completed = weeklyGoal.progress === 100;
-
-    await weeklyGoal.save();
-    res.json(weeklyGoal);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// (Removed duplicate simple PATCH handler to ensure feedback-aware handler below is used)
 
 // ✅ Toggle completed manually
 router.patch('/:id/toggle', authMiddleware, async (req, res) => {
@@ -99,5 +82,52 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+// ✅ Update goal progress with feedback
+router.patch('/:id', authMiddleware, async (req, res) => {
+  try {
+    const { text, progress, feedback } = req.body;
+
+    const weeklyGoal = await WeeklyGoal.findOne({ _id: req.params.id, user: req.user.id });
+    if (!weeklyGoal) return res.status(404).json({ error: 'WeeklyGoal not found' });
+
+    if (text !== undefined) weeklyGoal.text = text;
+    
+    // If progress is being updated and feedback is provided, add feedback entry
+    if (progress !== undefined && progress !== weeklyGoal.progress) {
+      weeklyGoal.progress = progress;
+      
+      if (feedback && feedback.trim() !== '') {
+        weeklyGoal.feedbackEntries.push({
+          progress: progress,
+          feedback: feedback.trim()
+        });
+      }
+    }
+    
+    weeklyGoal.completed = weeklyGoal.progress === 100;
+
+    await weeklyGoal.save();
+    res.json(weeklyGoal);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ Get feedback history for a goal
+router.get('/:id/feedback', authMiddleware, async (req, res) => {
+  try {
+    const weeklyGoal = await WeeklyGoal.findOne({ _id: req.params.id, user: req.user.id });
+    if (!weeklyGoal) return res.status(404).json({ error: 'WeeklyGoal not found' });
+
+    res.json(weeklyGoal.feedbackEntries);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
 
 module.exports = router;

@@ -52,6 +52,7 @@ const transporter = nodemailer.createTransport({
 
 
 router.post('/request-otp', async (req, res) => {
+
   const { email } = req.body;
 
   try {
