@@ -1,15 +1,14 @@
 const express = require("express");
 const router = express.Router();
-const Post = require("../models/Post");
-const { authMiddleware } = require("./auth");
-const multer = require("multer");
 const path = require("path");
+const multer = require("multer");
+const Post = require("../models/Post");
 const User = require("../models/User");
+const { authMiddleware } = require("./auth");
 
-// ✅ Directory is now created in index.js, just reference the path
 const postsDir = path.join(__dirname, "..", "uploads", "posts");
 
-// Storage configuration for posts
+// ✅ Multer setup
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, postsDir),
   filename: (req, file, cb) => {
@@ -25,16 +24,14 @@ router.post("/", authMiddleware, upload.single("image"), async (req, res) => {
   try {
     const { text, hashtags } = req.body;
 
-    // Extract hashtags written in text like #motivation
     const extractedHashtags = text ? text.match(/#\w+/g) || [] : [];
-
-    // Merge both manually typed + recommended hashtags from frontend
     let allHashtags = extractedHashtags;
+
     if (hashtags) {
       try {
         const parsed = JSON.parse(hashtags);
         allHashtags = [...new Set([...extractedHashtags, ...parsed])];
-      } catch (err) {
+      } catch {
         console.warn("Invalid hashtags format, skipping JSON parse");
       }
     }
@@ -47,10 +44,8 @@ router.post("/", authMiddleware, upload.single("image"), async (req, res) => {
     });
 
     await newPost.save();
-    
-    // ✅ Populate user data before sending response
     await newPost.populate("user", "name email profileImage");
-    
+
     res.status(201).json(newPost);
   } catch (err) {
     console.error("Create post error:", err);
@@ -58,47 +53,57 @@ router.post("/", authMiddleware, upload.single("image"), async (req, res) => {
   }
 });
 
-// ✅ GET FEED
+// ✅ GET FEED (With Interests + Crash-Safe Fields)
 router.get("/feed", authMiddleware, async (req, res) => {
   try {
-    // Get user's interests
+    const includeSelf = req.query.includeSelf === "true";
+
     const user = await User.findById(req.user.id).select("interests");
-    
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-    const interests = user?.interests?.map(i => 
-      i.trim().toLowerCase().replace(/^#/, '') // Remove # if present
-    ) || [];
+    const interests =
+      user?.interests?.map((i) =>
+        i.trim().toLowerCase().replace(/^#/, "")
+      ) || [];
 
-    // Fetch all posts (non-deleted, not current user) - SORTED BY NEWEST FIRST
-    const posts = await Post.find({
-      deleted: false,
-      user: { $ne: req.user.id }
-    })
+    const postFilter = { deleted: false };
+    if (!includeSelf) postFilter.user = { $ne: req.user.id };
+
+    const posts = await Post.find(postFilter)
       .populate("user", "name email profileImage")
       .sort({ createdAt: -1 })
       .lean();
 
-    // Mark posts if they match interests & calculate match score
-    const postsWithMatchFlag = posts.map(post => {
-      const hashtags = post.hashtags?.map(h => 
-        h.trim().toLowerCase().replace(/^#/, '')
-      ) || [];
-      
-      // Check if any hashtag matches user interests
-      const matchingTags = hashtags.filter(h => interests.includes(h));
+    const fullBase =
+      process.env.BASE_URL?.replace(/\/$/, "") || "http://localhost:5000";
+
+    const postsWithMatchFlag = posts.map((post) => {
+      const hashtags =
+        Array.isArray(post.hashtags)
+          ? post.hashtags.map((h) =>
+              (h || "").trim().toLowerCase().replace(/^#/, "")
+            )
+          : [];
+
+      const matchingTags = hashtags.filter((h) => interests.includes(h));
       const matches = matchingTags.length > 0;
-      
-      return { 
-        ...post, 
+
+      return {
+        ...post,
+        image: post.image
+          ? post.image.startsWith("http")
+            ? post.image
+            : `${fullBase}${post.image}`
+          : null,
+        hashtags,
+        likes: Array.isArray(post.likes) ? post.likes : [],
+        comments: Array.isArray(post.comments) ? post.comments : [],
         matchesInterest: matches,
-        matchScore: matchingTags.length
+        matchScore: matchingTags.length,
       };
     });
 
-    // Sort: matching posts section first, then non-matching section
+    // Sort: matched first, then others
     postsWithMatchFlag.sort((a, b) => {
       if (a.matchesInterest && !b.matchesInterest) return -1;
       if (!a.matchesInterest && b.matchesInterest) return 1;
@@ -112,42 +117,18 @@ router.get("/feed", authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ DELETE POST (SOFT DELETE)
-router.delete("/:id", authMiddleware, async (req, res) => {
-  try {
-    const post = await Post.findOne({ _id: req.params.id, user: req.user.id });
-    
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
-
-    post.deleted = true;
-    await post.save();
-
-    res.json({ message: "Post deleted successfully" });
-  } catch (err) {
-    console.error("Delete post error:", err);
-    res.status(500).json({ message: err.message || "Server error" });
-  }
-});
-
 // ✅ LIKE / UNLIKE POST
 router.put("/:id/like", authMiddleware, async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
-    
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
+    if (!post) return res.status(404).json({ message: "Post not found" });
 
     const userId = String(req.user.id);
     const hasLiked = post.likes.some((id) => String(id) === userId);
-    
-    if (hasLiked) {
+
+    if (hasLiked)
       post.likes = post.likes.filter((id) => String(id) !== userId);
-    } else {
-      post.likes.push(req.user.id);
-    }
+    else post.likes.push(req.user.id);
 
     await post.save();
     res.json(post);
@@ -161,28 +142,38 @@ router.put("/:id/like", authMiddleware, async (req, res) => {
 router.post("/:id/comment", authMiddleware, async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
-    
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
+    if (!post) return res.status(404).json({ message: "Post not found" });
 
-    if (!req.body.text || req.body.text.trim() === '') {
+    if (!req.body.text || req.body.text.trim() === "")
       return res.status(400).json({ message: "Comment text is required" });
-    }
 
-    post.comments.push({ 
-      user: req.user.id, 
-      text: req.body.text.trim() 
+    post.comments.push({
+      user: req.user.id,
+      text: req.body.text.trim(),
     });
-    
+
     await post.save();
-    
-    // ✅ Populate the comment user data
     await post.populate("comments.user", "name profileImage");
 
     res.json(post);
   } catch (err) {
     console.error("Comment error:", err);
+    res.status(500).json({ message: err.message || "Server error" });
+  }
+});
+
+// ✅ SOFT DELETE
+router.delete("/:id", authMiddleware, async (req, res) => {
+  try {
+    const post = await Post.findOne({ _id: req.params.id, user: req.user.id });
+    if (!post) return res.status(404).json({ message: "Post not found" });
+
+    post.deleted = true;
+    await post.save();
+
+    res.json({ message: "Post deleted successfully" });
+  } catch (err) {
+    console.error("Delete post error:", err);
     res.status(500).json({ message: err.message || "Server error" });
   }
 });
