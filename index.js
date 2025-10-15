@@ -3,7 +3,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs'); // ✅ Add this
+const fs = require('fs');
 
 const app = express();
 
@@ -11,24 +11,34 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ✅ CREATE UPLOAD DIRECTORIES BEFORE ANYTHING ELSE
+// ✅ CREATE ALL UPLOAD DIRECTORIES BEFORE ANYTHING ELSE
 const uploadsDir = path.join(__dirname, 'uploads');
 const postsDir = path.join(__dirname, 'uploads', 'posts');
+const icompletedDir = path.join(__dirname, 'uploads', 'icompleted');
+// const profilesDir = path.join(__dirname, 'uploads', 'profiles'); // Optional: for profile images
 
-try {
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-    console.log('✅ Uploads directory created');
-  }
-  if (!fs.existsSync(postsDir)) {
-    fs.mkdirSync(postsDir, { recursive: true });
-    console.log('✅ Posts directory created');
-  }
-} catch (err) {
-  console.error('❌ Failed to create upload directories:', err);
-}
+const directories = [
+  { path: uploadsDir, name: 'Uploads' },
+  { path: postsDir, name: 'Posts' },
+  { path: icompletedDir, name: 'ICompleted' },
+  { path: profilesDir, name: 'Profiles' }
+];
 
-// Serve uploads folder (for profile images, etc.)
+// Create all directories
+directories.forEach(dir => {
+  try {
+    if (!fs.existsSync(dir.path)) {
+      fs.mkdirSync(dir.path, { recursive: true });
+      console.log(`✅ ${dir.name} directory created`);
+    } else {
+      console.log(`✓ ${dir.name} directory exists`);
+    }
+  } catch (err) {
+    console.error(`❌ Failed to create ${dir.name} directory:`, err);
+  }
+});
+
+// ✅ Serve uploads folder (for all images)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Connect MongoDB FIRST, then start server
@@ -57,7 +67,8 @@ const startServer = async () => {
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
-      console.log('📡 Ready to accept requests');
+      console.log(`📡 Ready to accept requests`);
+      console.log(`📂 Static files served from: ${path.join(__dirname, 'uploads')}`);
     });
 
   } catch (err) {
@@ -78,6 +89,18 @@ mongoose.connection.on('error', (err) => {
 
 mongoose.connection.on('disconnected', () => {
   console.log('📡 Mongoose disconnected');
+});
+
+// Handle process termination gracefully
+process.on('SIGINT', async () => {
+  try {
+    await mongoose.connection.close();
+    console.log('🔴 MongoDB connection closed due to app termination');
+    process.exit(0);
+  } catch (err) {
+    console.error('Error during shutdown:', err);
+    process.exit(1);
+  }
 });
 
 // Start the server
