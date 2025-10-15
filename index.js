@@ -21,7 +21,7 @@ const directories = [
   { path: uploadsDir, name: 'Uploads' },
   { path: postsDir, name: 'Posts' },
   { path: icompletedDir, name: 'ICompleted' },
-  { path: profilesDir, name: 'Profiles' }
+  // { path: profilesDir, name: 'Profiles' }
 ];
 
 // Create all directories
